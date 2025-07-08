@@ -97,6 +97,22 @@ def process_files(files, level):
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Smart File Compressor", layout="wide")
+# Inject custom CSS for light grey background
+st.markdown("""
+    <style>
+        body {
+            background-color: #f5f5f5 !important;
+        }
+        .stApp {
+            background-color: #f5f5f5;
+        }
+        .stButton>button {
+            background-color: #4CAF50;
+            color: white;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("📂 Compress Files (PDFs, ZIPs, etc.)")
 
 st.sidebar.header("Compression Settings")
