@@ -3,12 +3,11 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-import humanfriendly
 import uuid
 from io import BytesIO
 import zipfile
 
-# --- Session & directories ---
+# Setup persistent session directory
 SESSION_ID = st.session_state.get("session_id", str(uuid.uuid4()))
 st.session_state["session_id"] = SESSION_ID
 BASE_TEMP_DIR = f"temp_storage_{SESSION_ID}"
@@ -17,20 +16,19 @@ OUTPUT_DIR = os.path.join(BASE_TEMP_DIR, "output")
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# --- PDF Compression ---
-def compress_pdf_ghostscript(input_path, output_path, quality="recommended"):
-    quality_map = {
-        "low": "/printer",
-        "recommended": "/ebook",
-        "high": "/screen",
-        "ultra": "/screen"
-    }
-    dpi_flags = {
-        "ultra": ["-dDownsampleColorImages=true", "-dColorImageResolution=50"]
-    }
-    quality_flag = quality_map.get(quality.lower(), "/ebook")
-    extra_flags = dpi_flags.get(quality.lower(), [])
+QUALITY_MAP = {
+    "Recommended": "/ebook",
+    "High": "/screen",
+    "Ultra": "/screen"
+}
 
+DPI_FLAGS = {
+    "Ultra": ["-dDownsampleColorImages=true", "-dColorImageResolution=50"]
+}
+
+def compress_pdf(input_path, output_path, quality="Recommended"):
+    quality_flag = QUALITY_MAP.get(quality, "/ebook")
+    extra_flags = DPI_FLAGS.get(quality, [])
     try:
         subprocess.run([
             "gs",
@@ -47,108 +45,71 @@ def compress_pdf_ghostscript(input_path, output_path, quality="recommended"):
     except subprocess.CalledProcessError:
         shutil.copy(input_path, output_path)
 
-# --- ZIP Extractor ---
 def extract_zip(file, destination):
     with zipfile.ZipFile(file, 'r') as zip_ref:
         zip_ref.extractall(destination)
 
-# --- Folder Zipper ---
-def zip_files_with_structure(base_folder, files_to_include):
+def zip_files_with_structure(base_folder):
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in files_to_include:
-            if Path(path).exists():
-                rel_path = Path(path).relative_to(base_folder)
-                zf.write(path, arcname=str(rel_path))
+        for root, _, files in os.walk(base_folder):
+            for f in files:
+                full_path = Path(root) / f
+                relative_path = full_path.relative_to(base_folder)
+                zf.write(full_path, arcname=str(relative_path))
     zip_buffer.seek(0)
     return zip_buffer
 
-# --- File Processor ---
-def process_files_to_target_size(uploaded_files, target_size):
-    working_dir = Path(OUTPUT_DIR)
-    if working_dir.exists():
-        shutil.rmtree(working_dir)
-    working_dir.mkdir(parents=True, exist_ok=True)
+def process_files(files, level):
+    shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    temp_dir = Path(OUTPUT_DIR)
 
-    # Save uploaded & extract zips
-    for file in uploaded_files:
+    # Step 1: Save and extract ZIPs
+    for file in files:
         ext = file.name.split(".")[-1].lower()
-        file_path = working_dir / file.name
-        with open(file_path, "wb") as f:
+        path = temp_dir / file.name
+        with open(path, "wb") as f:
             f.write(file.getbuffer())
         if ext == "zip":
-            extract_zip(file_path, working_dir)
-            file_path.unlink()
+            extract_zip(path, temp_dir)
+            path.unlink()
 
-    all_files = [Path(root) / f for root, _, files in os.walk(working_dir) for f in files]
+    # Step 2: Count total files for progress bar
+    all_files = []
+    for root, _, file_list in os.walk(temp_dir):
+        for fname in file_list:
+            all_files.append(Path(root) / fname)
 
-    total_size, selected_files, all_files_flat = 0, [], list(all_files)
+    progress = st.progress(0)
+    total = len(all_files)
 
-    compression_levels = ["ultra", "high", "recommended"]
-    for level in compression_levels:
-        temp_dir = working_dir / f"temp_{level}"
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
-        shutil.copytree(working_dir, temp_dir, dirs_exist_ok=True)
+    # Step 3: Process files with progress tracking
+    for i, fpath in enumerate(all_files):
+        if fpath.suffix.lower() == ".pdf":
+            out_path = fpath.parent / f"compressed_{fpath.name}"
+            compress_pdf(fpath, out_path, level)
+            fpath.unlink()
+            out_path.rename(fpath)
+        progress.progress((i + 1) / total)
 
-        temp_selected = []
-        temp_total_size = 0
-        temp_all = [Path(root) / f for root, _, files in os.walk(temp_dir) for f in files]
+    return temp_dir
 
-        for i, file in enumerate(temp_all):
-            ext = file.suffix.lower()
-            orig_size = file.stat().st_size
+# --- Streamlit UI ---
+st.set_page_config(page_title="Smart File Compressor", layout="wide")
+st.title("📂 Compress Files (PDFs, ZIPs, etc.)")
 
-            if ext == ".pdf":
-                out_file = file.parent / f"compressed_{file.name}"
-                compress_pdf_ghostscript(file, out_file, level)
-                if out_file.exists():
-                    compressed_size = out_file.stat().st_size
-                    if temp_total_size + compressed_size <= target_size:
-                        temp_selected.append(out_file)
-                        temp_total_size += compressed_size
-                    file.unlink()
-                    out_file.rename(file)
-            else:
-                if temp_total_size + orig_size <= target_size:
-                    temp_selected.append(file)
-                    temp_total_size += orig_size
+st.sidebar.header("Compression Settings")
+level = st.sidebar.selectbox("Choose PDF Compression Level", ["Recommended", "High", "Ultra"])
 
-        if temp_total_size <= target_size:
-            return temp_selected, all_files_flat
+st.markdown("Upload files to compress all PDFs according to the selected level and retain folder structure.")
 
-    return None, all_files_flat
+uploaded = st.file_uploader("📁 Upload files", accept_multiple_files=True)
 
-# --- UI ---
-st.set_page_config(page_title="📧 Email File Size Optimizer", layout="wide")
-st.title("📦 File Compressor & Size-Limiter")
+if uploaded and st.button("🚀 Compress & Download"):
+    with st.spinner("Processing your files..."):
+        output_folder = process_files(uploaded, level)
 
-st.markdown("""
-Upload multiple files (PDFs, DOCX, ZIPs). This app:
-- Compresses only PDFs (if needed)
-- Keeps others untouched
-- Ensures total size is under your limit
-""")
-
-max_size_input = st.text_input("🎯 Target Total Size (e.g., 5MB or 10MB):", "7MB")
-try:
-    target_bytes = humanfriendly.parse_size(max_size_input)
-except:
-    st.error("❌ Invalid size format. Use 5MB, 10MB, etc.")
-    st.stop()
-
-uploaded_files = st.file_uploader("📁 Upload Files (PDFs, ZIPs, etc)", accept_multiple_files=True)
-
-if uploaded_files and st.button("🚀 Optimize and Download"):
-    with st.spinner("Processing..."):
-        selected, all_files = process_files_to_target_size(uploaded_files, target_bytes)
-
-    if selected is None:
-        st.error("❌ Could not fit all files within size limit. Try removing a few.")
-    else:
-        zip_selected = zip_files_with_structure(OUTPUT_DIR, selected)
-        zip_all = zip_files_with_structure(OUTPUT_DIR, all_files)
-
-        st.success(f"✅ Done! {len(selected)} files included under the {max_size_input} limit.")
-        st.download_button("📦 Download Optimized ZIP", zip_selected, file_name="Optimized_Files.zip", mime="application/zip")
-        st.download_button("📁 Download All Files ZIP", zip_all, file_name="All_Files.zip", mime="application/zip")
+    zip_buffer = zip_files_with_structure(output_folder)
+    st.success("✅ Done! Your compressed files are ready.")
+    st.download_button("📦 Download ZIP", zip_buffer, file_name="Compressed_Structured.zip", mime="application/zip")
