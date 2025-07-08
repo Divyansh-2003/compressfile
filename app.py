@@ -98,26 +98,6 @@ def process_files(files, level):
 # --- Streamlit UI ---
 st.set_page_config(page_title="Smart File Compressor", layout="wide")
 
-st.markdown("""
-    <style>
-        /* Force background of main content area */
-        .block-container {
-            background-color: #f5f5f5;
-        }
-
-        /* Optional: lighten sidebar as well */
-        section[data-testid="stSidebar"] {
-            background-color: #fafafa;
-        }
-
-        /* Optional: style buttons to match */
-        .stButton>button {
-            background-color: #4CAF50;
-            color: white;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
 
 st.sidebar.header("Compression Settings")
 level = st.sidebar.selectbox("Choose PDF Compression Level", ["Recommended", "High", "Ultra"])
