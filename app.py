@@ -1,9 +1,3 @@
-# Final Streamlit app with email-size optimization functionality
-# - Accepts multiple files
-# - Users define max total output size
-# - Compresses PDFs selectively using Ghostscript for stronger compression
-# - Accepts ZIPs and extracts their contents (including nested folders)
-
 import streamlit as st
 import os
 import shutil
@@ -14,7 +8,7 @@ import uuid
 from io import BytesIO
 import zipfile
 
-# --- Setup persistent session directory ---
+# --- Session & directories ---
 SESSION_ID = st.session_state.get("session_id", str(uuid.uuid4()))
 st.session_state["session_id"] = SESSION_ID
 BASE_TEMP_DIR = f"temp_storage_{SESSION_ID}"
@@ -23,7 +17,7 @@ OUTPUT_DIR = os.path.join(BASE_TEMP_DIR, "output")
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# --- Utility Functions ---
+# --- PDF Compression ---
 def compress_pdf_ghostscript(input_path, output_path, quality="recommended"):
     quality_map = {
         "low": "/printer",
@@ -36,6 +30,7 @@ def compress_pdf_ghostscript(input_path, output_path, quality="recommended"):
     }
     quality_flag = quality_map.get(quality.lower(), "/ebook")
     extra_flags = dpi_flags.get(quality.lower(), [])
+
     try:
         subprocess.run([
             "gs",
@@ -52,105 +47,108 @@ def compress_pdf_ghostscript(input_path, output_path, quality="recommended"):
     except subprocess.CalledProcessError:
         shutil.copy(input_path, output_path)
 
+# --- ZIP Extractor ---
 def extract_zip(file, destination):
     with zipfile.ZipFile(file, 'r') as zip_ref:
         zip_ref.extractall(destination)
 
-def process_files_to_target_size(files, target_size):
-    temp_dir = Path(OUTPUT_DIR)
-    temp_dir.mkdir(parents=True, exist_ok=True)
-
-    for uploaded_file in files:
-        extension = uploaded_file.name.lower().split(".")[-1]
-        file_path = temp_dir / uploaded_file.name
-
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        if extension == "zip":
-            extract_zip(file_path, temp_dir)
-            file_path.unlink()
-
-    compression_levels = ["ultra", "high", "recommended", "low"]
-
-    for level in compression_levels:
-        working_dir = temp_dir / f"_tmp_{level}"
-        if working_dir.exists():
-            shutil.rmtree(working_dir)
-        shutil.copytree(temp_dir, working_dir)
-
-        selected_files, total_size = [], 0
-
-        all_files = [os.path.join(root, fname)
-                     for root, _, files_in_dir in os.walk(working_dir)
-                     for fname in files_in_dir]
-
-        progress = st.progress(0)
-        for i, full_path in enumerate(all_files):
-            file_path = Path(full_path)
-            extension = file_path.suffix.lower()
-            file_size = file_path.stat().st_size
-
-            if extension == ".pdf":
-                compressed_path = file_path.parent / f"compressed_{file_path.name}"
-                compress_pdf_ghostscript(file_path, compressed_path, level)
-                if compressed_path.exists():
-                    compressed_size = compressed_path.stat().st_size
-                    if total_size + compressed_size <= target_size:
-                        selected_files.append(compressed_path)
-                        total_size += compressed_size
-                    compressed_path.rename(file_path)
-            elif total_size + file_size <= target_size:
-                selected_files.append(file_path)
-                total_size += file_size
-
-            progress.progress((i + 1) / len(all_files))
-
-        if total_size <= target_size:
-            progress.empty()
-            return selected_files
-
-    progress.empty()
-    return None
-
-def zip_files(file_paths, zip_name="Final_Share.zip"):
+# --- Folder Zipper ---
+def zip_files_with_structure(base_folder, files_to_include):
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file_path in file_paths:
-            if file_path.exists():
-                zf.write(file_path, arcname=file_path.name)
+        for path in files_to_include:
+            if Path(path).exists():
+                rel_path = Path(path).relative_to(base_folder)
+                zf.write(path, arcname=str(rel_path))
     zip_buffer.seek(0)
     return zip_buffer
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="Email File Set Optimizer", layout="wide")
-st.title("📧 Email File Size Optimizer")
+# --- File Processor ---
+def process_files_to_target_size(uploaded_files, target_size):
+    working_dir = Path(OUTPUT_DIR)
+    if working_dir.exists():
+        shutil.rmtree(working_dir)
+    working_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save uploaded & extract zips
+    for file in uploaded_files:
+        ext = file.name.split(".")[-1].lower()
+        file_path = working_dir / file.name
+        with open(file_path, "wb") as f:
+            f.write(file.getbuffer())
+        if ext == "zip":
+            extract_zip(file_path, working_dir)
+            file_path.unlink()
+
+    all_files = [Path(root) / f for root, _, files in os.walk(working_dir) for f in files]
+
+    total_size, selected_files, all_files_flat = 0, [], list(all_files)
+
+    compression_levels = ["ultra", "high", "recommended"]
+    for level in compression_levels:
+        temp_dir = working_dir / f"temp_{level}"
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        shutil.copytree(working_dir, temp_dir, dirs_exist_ok=True)
+
+        temp_selected = []
+        temp_total_size = 0
+        temp_all = [Path(root) / f for root, _, files in os.walk(temp_dir) for f in files]
+
+        for i, file in enumerate(temp_all):
+            ext = file.suffix.lower()
+            orig_size = file.stat().st_size
+
+            if ext == ".pdf":
+                out_file = file.parent / f"compressed_{file.name}"
+                compress_pdf_ghostscript(file, out_file, level)
+                if out_file.exists():
+                    compressed_size = out_file.stat().st_size
+                    if temp_total_size + compressed_size <= target_size:
+                        temp_selected.append(out_file)
+                        temp_total_size += compressed_size
+                    file.unlink()
+                    out_file.rename(file)
+            else:
+                if temp_total_size + orig_size <= target_size:
+                    temp_selected.append(file)
+                    temp_total_size += orig_size
+
+        if temp_total_size <= target_size:
+            return temp_selected, all_files_flat
+
+    return None, all_files_flat
+
+# --- UI ---
+st.set_page_config(page_title="📧 Email File Size Optimizer", layout="wide")
+st.title("📦 File Compressor & Size-Limiter")
 
 st.markdown("""
-Upload multiple files (PDFs, DOCX, images, etc). The app will compress only the PDFs
-so that the final archive stays within your selected total size limit (e.g. for emailing).
+Upload multiple files (PDFs, DOCX, ZIPs). This app:
+- Compresses only PDFs (if needed)
+- Keeps others untouched
+- Ensures total size is under your limit
 """)
 
-max_size_input = st.text_input("🌟 Target Total Size (e.g., 7MB or 10MB):", "10MB")
+max_size_input = st.text_input("🎯 Target Total Size (e.g., 5MB or 10MB):", "7MB")
 try:
     target_bytes = humanfriendly.parse_size(max_size_input)
 except:
-    st.error("Invalid size format. Use like 7MB, 10MB")
+    st.error("❌ Invalid size format. Use 5MB, 10MB, etc.")
     st.stop()
 
-uploaded_files = st.file_uploader("📁 Upload Files (multiple allowed):", accept_multiple_files=True)
+uploaded_files = st.file_uploader("📁 Upload Files (PDFs, ZIPs, etc)", accept_multiple_files=True)
 
 if uploaded_files and st.button("🚀 Optimize and Download"):
-    if os.path.exists(BASE_TEMP_DIR):
-        shutil.rmtree(BASE_TEMP_DIR)
-    os.makedirs(INPUT_DIR, exist_ok=True)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    with st.spinner("Processing..."):
+        selected, all_files = process_files_to_target_size(uploaded_files, target_bytes)
 
-    selected_files = process_files_to_target_size(uploaded_files, target_bytes)
-    if selected_files is None:
-        st.error("❌ Unable to fit all files within the selected size. Please remove some files and try again.")
+    if selected is None:
+        st.error("❌ Could not fit all files within size limit. Try removing a few.")
     else:
-        final_zip = zip_files(selected_files)
-        st.success(f"✅ Done! {len(selected_files)} files included in the final zip.")
-        st.download_button("📦 Download ZIP", final_zip, file_name="Final_Share.zip", mime="application/zip")
+        zip_selected = zip_files_with_structure(OUTPUT_DIR, selected)
+        zip_all = zip_files_with_structure(OUTPUT_DIR, all_files)
 
+        st.success(f"✅ Done! {len(selected)} files included under the {max_size_input} limit.")
+        st.download_button("📦 Download Optimized ZIP", zip_selected, file_name="Optimized_Files.zip", mime="application/zip")
+        st.download_button("📁 Download All Files ZIP", zip_all, file_name="All_Files.zip", mime="application/zip")
