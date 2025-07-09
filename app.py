@@ -7,7 +7,7 @@ import uuid
 from io import BytesIO
 import zipfile
 
-# Setup persistent session directory
+# --- Setup persistent session directory ---
 SESSION_ID = st.session_state.get("session_id", str(uuid.uuid4()))
 st.session_state["session_id"] = SESSION_ID
 BASE_TEMP_DIR = f"temp_storage_{SESSION_ID}"
@@ -16,14 +16,34 @@ OUTPUT_DIR = os.path.join(BASE_TEMP_DIR, "output")
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# --- Compression settings ---
 QUALITY_MAP = {
     "Recommended": "/ebook",
     "High": "/screen",
-    "Ultra": "/screen"
+    "Ultra": "/screen",
+    "Extreme80": "/screen",
+    "Extreme90": "/screen",
+    "ExtremeMax": "/screen"
 }
 
 DPI_FLAGS = {
-    "Ultra": ["-dDownsampleColorImages=true", "-dColorImageResolution=50"]
+    "Extreme80": [
+        "-dDownsampleColorImages=true", "-dColorImageResolution=100",
+        "-dDownsampleGrayImages=true", "-dGrayImageResolution=100",
+        "-dDownsampleMonoImages=true", "-dMonoImageResolution=100"
+    ],
+    "Extreme90": [
+        "-dDownsampleColorImages=true", "-dColorImageResolution=72",
+        "-dDownsampleGrayImages=true", "-dGrayImageResolution=72",
+        "-dDownsampleMonoImages=true", "-dMonoImageResolution=72"
+    ],
+    "ExtremeMax": [
+        "-dDownsampleColorImages=true", "-dColorImageResolution=50",
+        "-dDownsampleGrayImages=true", "-dGrayImageResolution=50",
+        "-dDownsampleMonoImages=true", "-dMonoImageResolution=50",
+        "-dDetectDuplicateImages=true", "-dRemoveUnusedObjects=true",
+        "-dRemoveUnusedStreams=true", "-dCompressFonts=true", "-dSubsetFonts=true"
+    ]
 }
 
 def compress_pdf(input_path, output_path, quality="Recommended"):
@@ -97,12 +117,29 @@ def process_files(files, level):
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Smart File Compressor", layout="wide")
+st.markdown(
+    """
+    <style>
+        body, .stApp {
+            background-color: #f2f2f2;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
+st.title("📂 Smart File Compressor")
 
 st.sidebar.header("Compression Settings")
-level = st.sidebar.selectbox("Choose PDF Compression Level", ["Recommended", "High", "Ultra"])
+level = st.sidebar.selectbox("Choose PDF Compression Level", [
+    "Recommended", "High", "Ultra", "Extreme80", "Extreme90", "ExtremeMax"
+])
 
-st.markdown("Upload files to compress all PDFs according to the selected level and retain folder structure.")
+st.markdown("""
+Upload PDFs, folders, or ZIPs. All PDFs will be compressed based on the selected level.  
+🗂 Folder structure is preserved in output.  
+⚙️ New levels like Extreme90 and ExtremeMax offer **aggressive compression** (down to 80-90%).
+""")
 
 uploaded = st.file_uploader("📁 Upload files", accept_multiple_files=True)
 
