@@ -1,125 +1,10 @@
-import streamlit as st
-import os
-import shutil
-import subprocess
-from pathlib import Path
-import uuid
-from io import BytesIO
-import zipfile
-from concurrent.futures import ThreadPoolExecutor
-
-# --- Setup persistent session directory ---
-SESSION_ID = st.session_state.get("session_id", str(uuid.uuid4()))
-st.session_state["session_id"] = SESSION_ID
-BASE_TEMP_DIR = f"temp_storage_{SESSION_ID}"
-INPUT_DIR = os.path.join(BASE_TEMP_DIR, "input")
-OUTPUT_DIR = os.path.join(BASE_TEMP_DIR, "output")
-os.makedirs(INPUT_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# --- Compression Settings ---
-QUALITY_MAP = {
-    "Recommended": "/ebook",
-    "High": "/ebook",
-    "Ultra": "/ebook",
-    "Extreme80": "/ebook",
-    "Extreme90": "/ebook",
-    "Extreme92": "/ebook",
-    "ExtremeMax": "/ebook"
-}
-
-DPI_FLAGS = {
-    "High": ["-dDownsampleColorImages=true", "-dColorImageResolution=120"],
-    "Ultra": ["-dDownsampleColorImages=true", "-dColorImageResolution=100"],
-    "Extreme80": ["-dDownsampleColorImages=true", "-dColorImageResolution=80"],
-    "Extreme90": ["-dDownsampleColorImages=true", "-dColorImageResolution=60"],
-    "Extreme92": ["-dDownsampleColorImages=true", "-dColorImageResolution=50"],
-    "ExtremeMax": ["-dDownsampleColorImages=true", "-dColorImageResolution=40"]
-}
-
-def compress_pdf(input_path, output_path, quality="Recommended"):
-    quality_flag = QUALITY_MAP.get(quality, "/ebook")
-    extra_flags = DPI_FLAGS.get(quality, [])
-    try:
-        subprocess.run([
-            "gs",
-            "-sDEVICE=pdfwrite",
-            "-dCompatibilityLevel=1.4",
-            f"-dPDFSETTINGS={quality_flag}",
-            *extra_flags,
-            "-dNOPAUSE",
-            "-dQUIET",
-            "-dBATCH",
-            f"-sOutputFile={output_path}",
-            str(input_path)
-        ], check=True)
-    except subprocess.CalledProcessError:
-        shutil.copy(input_path, output_path)
-
-def extract_zip(file, destination):
-    with zipfile.ZipFile(file, 'r') as zip_ref:
-        zip_ref.extractall(destination)
-
-def zip_files_with_structure(base_folder):
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, _, files in os.walk(base_folder):
-            for f in files:
-                full_path = Path(root) / f
-                relative_path = full_path.relative_to(base_folder)
-                zf.write(full_path, arcname=str(relative_path))
-    zip_buffer.seek(0)
-    return zip_buffer
-
-def process_files(files, level):
-    shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    temp_dir = Path(OUTPUT_DIR)
-
-    # Save and extract ZIPs
-    for file in files:
-        ext = file.name.split(".")[-1].lower()
-        path = temp_dir / file.name
-        with open(path, "wb") as f:
-            f.write(file.getbuffer())
-        if ext == "zip":
-            extract_zip(path, temp_dir)
-            path.unlink()
-
-    # Collect all files
-    all_files = []
-    for root, _, file_list in os.walk(temp_dir):
-        for fname in file_list:
-            all_files.append(Path(root) / fname)
-
-    pdf_files = [f for f in all_files if f.suffix.lower() == ".pdf"]
-    progress = st.progress(0)
-
-    def compress_and_replace(fpath):
-        out_path = fpath.parent / f"compressed_{fpath.name}"
-        compress_pdf(fpath, out_path, level)
-        fpath.unlink()
-        out_path.rename(fpath)
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        for i, _ in enumerate(executor.map(compress_and_replace, pdf_files)):
-            progress.progress((i + 1) / len(pdf_files))
-
-    return temp_dir
-
 # --- Streamlit UI ---
 st.set_page_config(page_title="Smart File Compressor", layout="wide")
 st.markdown(
     """
     <style>
-        .stApp {
+        body, .stApp {
             background-color: #a0aabd;
-        }
-        .css-18ni7ap.e8zbici2 {
-            color: #333;
-        }
-        .css-10trblm.e16nr0p34 {
-            color: #2c3e50;
         }
     </style>
     """,
@@ -133,10 +18,7 @@ level = st.sidebar.selectbox("Choose PDF Compression Level", [
     "Recommended", "High", "Ultra", "Extreme80", "Extreme90", "Extreme92", "ExtremeMax"
 ])
 
-st.markdown("""
-Upload files to compress all PDFs according to the selected level and retain folder structure.  
-PDF compression is done using Ghostscript. For best compression, use **Extreme92** or **ExtremeMax**.
-""")
+st.markdown("Upload files to compress all PDFs according to the selected level and retain folder structure.")
 
 uploaded = st.file_uploader("📁 Upload files", accept_multiple_files=True)
 
