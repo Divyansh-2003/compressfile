@@ -13,7 +13,7 @@ st.set_page_config(page_title="Smart File Compressor", layout="wide")
 st.markdown("""
     <style>
         body, .stApp {
-            background-color: #d3d3d3;
+            background-color: #a0aabd;
         }
     </style>
     """, unsafe_allow_html=True)
