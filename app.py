@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 from io import BytesIO
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 
 # --- Setup persistent session directory ---
 SESSION_ID = st.session_state.get("session_id", str(uuid.uuid4()))
@@ -16,7 +17,7 @@ OUTPUT_DIR = os.path.join(BASE_TEMP_DIR, "output")
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# --- Compression settings ---
+# --- Compression Settings ---
 QUALITY_MAP = {
     "Recommended": "/ebook",
     "High": "/screen",
@@ -27,24 +28,11 @@ QUALITY_MAP = {
 }
 
 DPI_FLAGS = {
-    "Extreme80": [
-        "-dDownsampleColorImages=true", "-dColorImageResolution=100",
-        "-dDownsampleGrayImages=true", "-dGrayImageResolution=100",
-        "-dDownsampleMonoImages=true", "-dMonoImageResolution=100"
-    ],
-    "Extreme90": [
-        "-dDownsampleColorImages=true", "-dColorImageResolution=72",
-        "-dDownsampleGrayImages=true", "-dGrayImageResolution=72",
-        "-dDownsampleMonoImages=true", "-dMonoImageResolution=72"
-    ],
-    "ExtremeMax": [
-        "-dDownsampleColorImages=true", "-dColorImageResolution=50",
-        "-dDownsampleGrayImages=true", "-dGrayImageResolution=50",
-        "-dDownsampleMonoImages=true", "-dMonoImageResolution=50",
-        "-dDetectDuplicateImages=true", "-dRemoveUnusedObjects=true",
-        "-dRemoveUnusedStreams=true", "-dCompressFonts=true", "-dSubsetFonts=true"
-    ]
+    "Extreme80": ["-dDownsampleColorImages=true", "-dColorImageResolution=80"],
+    "Extreme90": ["-dDownsampleColorImages=true", "-dColorImageResolution=60"],
+    "ExtremeMax": ["-dDownsampleColorImages=true", "-dColorImageResolution=40"]
 }
+
 
 def compress_pdf(input_path, output_path, quality="Recommended"):
     quality_flag = QUALITY_MAP.get(quality, "/ebook")
@@ -65,9 +53,11 @@ def compress_pdf(input_path, output_path, quality="Recommended"):
     except subprocess.CalledProcessError:
         shutil.copy(input_path, output_path)
 
+
 def extract_zip(file, destination):
     with zipfile.ZipFile(file, 'r') as zip_ref:
         zip_ref.extractall(destination)
+
 
 def zip_files_with_structure(base_folder):
     zip_buffer = BytesIO()
@@ -80,12 +70,13 @@ def zip_files_with_structure(base_folder):
     zip_buffer.seek(0)
     return zip_buffer
 
+
 def process_files(files, level):
     shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     temp_dir = Path(OUTPUT_DIR)
 
-    # Step 1: Save and extract ZIPs
+    # Save and extract ZIPs
     for file in files:
         ext = file.name.split(".")[-1].lower()
         path = temp_dir / file.name
@@ -95,33 +86,45 @@ def process_files(files, level):
             extract_zip(path, temp_dir)
             path.unlink()
 
-    # Step 2: Count total files for progress bar
+    # Collect all files
     all_files = []
     for root, _, file_list in os.walk(temp_dir):
         for fname in file_list:
             all_files.append(Path(root) / fname)
 
-    progress = st.progress(0)
-    total = len(all_files)
+    pdf_files = [f for f in all_files if f.suffix.lower() == ".pdf"]
+    non_pdf_files = [f for f in all_files if f.suffix.lower() != ".pdf"]
 
-    # Step 3: Process files with progress tracking
-    for i, fpath in enumerate(all_files):
-        if fpath.suffix.lower() == ".pdf":
-            out_path = fpath.parent / f"compressed_{fpath.name}"
-            compress_pdf(fpath, out_path, level)
-            fpath.unlink()
-            out_path.rename(fpath)
-        progress.progress((i + 1) / total)
+    progress = st.progress(0)
+    total = len(pdf_files)
+
+    def compress_and_replace(fpath):
+        out_path = fpath.parent / f"compressed_{fpath.name}"
+        compress_pdf(fpath, out_path, level)
+        fpath.unlink()
+        out_path.rename(fpath)
+
+    # Use ThreadPoolExecutor for parallel compression
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        for i, _ in enumerate(executor.map(compress_and_replace, pdf_files)):
+            progress.progress((i + 1) / total)
 
     return temp_dir
+
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Smart File Compressor", layout="wide")
 st.markdown(
     """
     <style>
-        body, .stApp {
-            background-color: #a0aabd;
+        .stApp {
+            background-color: #f0f2f6;
+        }
+        .css-18ni7ap.e8zbici2 {
+            color: #333;
+        }
+        .css-10trblm.e16nr0p34 {
+            color: #2c3e50;
         }
     </style>
     """,
@@ -136,7 +139,8 @@ level = st.sidebar.selectbox("Choose PDF Compression Level", [
 ])
 
 st.markdown("""
-Upload PDFs, folders, or ZIPs. All PDFs will be compressed based on the selected level. 
+Upload files to compress all PDFs according to the selected level and retain folder structure.  
+PDF compression is done using Ghostscript. For better size reduction, try the *Extreme* levels.
 """)
 
 uploaded = st.file_uploader("📁 Upload files", accept_multiple_files=True)
