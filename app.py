@@ -35,7 +35,6 @@ DPI_FLAGS = {
     "ExtremeMax": ["-dDownsampleColorImages=true", "-dColorImageResolution=40"]
 }
 
-
 def compress_pdf(input_path, output_path, quality="Recommended"):
     quality_flag = QUALITY_MAP.get(quality, "/ebook")
     extra_flags = DPI_FLAGS.get(quality, [])
@@ -55,11 +54,9 @@ def compress_pdf(input_path, output_path, quality="Recommended"):
     except subprocess.CalledProcessError:
         shutil.copy(input_path, output_path)
 
-
 def extract_zip(file, destination):
     with zipfile.ZipFile(file, 'r') as zip_ref:
         zip_ref.extractall(destination)
-
 
 def zip_files_with_structure(base_folder):
     zip_buffer = BytesIO()
@@ -71,7 +68,6 @@ def zip_files_with_structure(base_folder):
                 zf.write(full_path, arcname=str(relative_path))
     zip_buffer.seek(0)
     return zip_buffer
-
 
 def process_files(files, level):
     shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
@@ -95,10 +91,7 @@ def process_files(files, level):
             all_files.append(Path(root) / fname)
 
     pdf_files = [f for f in all_files if f.suffix.lower() == ".pdf"]
-    non_pdf_files = [f for f in all_files if f.suffix.lower() != ".pdf"]
-
     progress = st.progress(0)
-    total = len(pdf_files)
 
     def compress_and_replace(fpath):
         out_path = fpath.parent / f"compressed_{fpath.name}"
@@ -106,13 +99,11 @@ def process_files(files, level):
         fpath.unlink()
         out_path.rename(fpath)
 
-    # Use ThreadPoolExecutor for parallel compression
     with ThreadPoolExecutor(max_workers=2) as executor:
         for i, _ in enumerate(executor.map(compress_and_replace, pdf_files)):
-            progress.progress((i + 1) / total)
+            progress.progress((i + 1) / len(pdf_files))
 
     return temp_dir
-
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Smart File Compressor", layout="wide")
@@ -120,7 +111,7 @@ st.markdown(
     """
     <style>
         .stApp {
-            background-color: #a0aabd;
+            background-color: #f0f2f6;
         }
         .css-18ni7ap.e8zbici2 {
             color: #333;
@@ -137,12 +128,12 @@ st.title("📂 Smart File Compressor")
 
 st.sidebar.header("Compression Settings")
 level = st.sidebar.selectbox("Choose PDF Compression Level", [
-    "Recommended", "High", "Ultra", "Extreme80", "Extreme90", "ExtremeMax"
+    "Recommended", "High", "Ultra", "Extreme80", "Extreme90", "Extreme92", "ExtremeMax"
 ])
 
 st.markdown("""
 Upload files to compress all PDFs according to the selected level and retain folder structure.  
-PDF compression is done using Ghostscript. For better size reduction, try the *Extreme* levels.
+PDF compression is done using Ghostscript. For best compression, use **Extreme92** or **ExtremeMax**.
 """)
 
 uploaded = st.file_uploader("📁 Upload files", accept_multiple_files=True)
