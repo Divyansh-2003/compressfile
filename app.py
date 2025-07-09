@@ -24,12 +24,14 @@ QUALITY_MAP = {
     "Ultra": "/screen",
     "Extreme80": "/screen",
     "Extreme90": "/screen",
+    "Extreme92": "/screen",
     "ExtremeMax": "/screen"
 }
 
 DPI_FLAGS = {
     "Extreme80": ["-dDownsampleColorImages=true", "-dColorImageResolution=80"],
     "Extreme90": ["-dDownsampleColorImages=true", "-dColorImageResolution=60"],
+    "Extreme92": ["-dDownsampleColorImages=true", "-dColorImageResolution=50"],
     "ExtremeMax": ["-dDownsampleColorImages=true", "-dColorImageResolution=40"]
 }
 
