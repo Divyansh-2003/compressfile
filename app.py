@@ -121,7 +121,7 @@ st.markdown(
     """
     <style>
         body, .stApp {
-            background-color: #f2f2f2;
+            background-color: #dfdaeb;
         }
     </style>
     """,
@@ -136,9 +136,7 @@ level = st.sidebar.selectbox("Choose PDF Compression Level", [
 ])
 
 st.markdown("""
-Upload PDFs, folders, or ZIPs. All PDFs will be compressed based on the selected level.  
-🗂 Folder structure is preserved in output.  
-⚙️ New levels like Extreme90 and ExtremeMax offer **aggressive compression** (down to 80-90%).
+Upload PDFs, folders, or ZIPs. All PDFs will be compressed based on the selected level. 
 """)
 
 uploaded = st.file_uploader("📁 Upload files", accept_multiple_files=True)
