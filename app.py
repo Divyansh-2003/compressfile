@@ -21,7 +21,7 @@ st.markdown("""
 st.title("📂 Smart File Compressor")
 st.sidebar.header("Compression Settings")
 level = st.sidebar.selectbox("Choose PDF Compression Level", [
-    "Recommended", "High", "Ultra", "Extreme80", "Extreme90", "Extreme92", "ExtremeMax"
+    "Level 1", "Level 2", "Level 3", "Level 4", "Level 5", "Level 6", "Level 7"
 ])
 
 # --- Session Paths ---
