@@ -35,20 +35,20 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # --- Compression Maps ---
 QUALITY_MAP = {
-    "Recommended": "/ebook",
-    "High": "/screen",
-    "Ultra": "/screen",
-    "Extreme80": "/screen",
-    "Extreme90": "/screen",
-    "Extreme92": "/screen",
-    "ExtremeMax": "/screen"
+    "Level 1": "/ebook",
+    "Level 2": "/screen",
+    "Level 3": "/screen",
+    "Level 4": "/screen",
+    "Level 5": "/screen",
+    "Level 6": "/screen",
+    "Level 7": "/screen"
 }
 
 DPI_FLAGS = {
-    "Extreme80": ["-dDownsampleColorImages=true", "-dColorImageResolution=80"],
-    "Extreme90": ["-dDownsampleColorImages=true", "-dColorImageResolution=60"],
-    "Extreme92": ["-dDownsampleColorImages=true", "-dColorImageResolution=50"],
-    "ExtremeMax": ["-dDownsampleColorImages=true", "-dColorImageResolution=40"]
+    "Level 4": ["-dDownsampleColorImages=true", "-dColorImageResolution=80"],
+    "Level 5": ["-dDownsampleColorImages=true", "-dColorImageResolution=60"],
+    "Level 6": ["-dDownsampleColorImages=true", "-dColorImageResolution=50"],
+    "Level 7": ["-dDownsampleColorImages=true", "-dColorImageResolution=40"]
 }
 
 # --- Core Functions ---
