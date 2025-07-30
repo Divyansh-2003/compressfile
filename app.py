@@ -140,10 +140,12 @@ if uploaded and st.button("🚀 Compress & Download"):
     with st.spinner("Processing your files..."):
         output_folder = process_files(uploaded, level)
 
-   # Generate ZIP buffer
+# Process files and get the output directory path
+output_folder = process_files(uploaded_files, compress_settings)
+
+# Zip and set download name based on contents
 zip_buffer = zip_files_with_structure(output_folder)
 
-# Decide ZIP filename based on content
 entries = list(Path(output_folder).iterdir())
 if len(entries) == 1 and entries[0].is_file():
     zip_name = f"{entries[0].stem}.zip"
