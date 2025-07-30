@@ -140,15 +140,15 @@ if uploaded and st.button("🚀 Compress & Download"):
     with st.spinner("Processing your files..."):
         output_folder = process_files(uploaded, level)
 
-        zip_buffer = zip_files_with_structure(output_folder)
+   # Generate ZIP buffer
+zip_buffer = zip_files_with_structure(output_folder)
 
-   # Determine ZIP name based on content
-entries = list(output_folder.iterdir())
+# Decide ZIP filename based on content
+entries = list(Path(output_folder).iterdir())
 if len(entries) == 1 and entries[0].is_file():
     zip_name = f"{entries[0].stem}.zip"
 else:
     zip_name = "Compressed_Structured.zip"
 
-
-    st.success("✅ Done! Your compressed files are ready.")
-    st.download_button("📦 Download ZIP", zip_buffer, file_name=zip_name, mime="application/zip")
+st.success("✅ Done! Your compressed files are ready.")
+st.download_button("📦 Download ZIP", zip_buffer, file_name=zip_name, mime="application/zip")
